@@ -1,0 +1,380 @@
+For my configuration 192.168.1.15(app1) is nagios server and 192.168.1.19(app2) is nrpe daemon.
+For access nagios server http://192.168.1.15/nagios/ with username nagiosadmin and password cmgi
+
+Nagios is open source monitoring tool by which we can receive alerts for servers,applications,services
+
+Before installing nagios,make sure you have root access and install following packages on Centos/ Redhat
+installation before continuing.
+
+1st install Apache
+PHP
+GCC compiler
+GD development libraries
+yum install apache*
+yum install httpd php
+yum install gcc glibc glibc-common
+yum install gd gd-devel
+yum install openssl-devel
+
+Nagios Installation
+1.Create user nagios
+useradd -m nagios
+passwd nagios password
+2. Create a new nagcmd group for allowing external commands to be submitted through the web interface. Add
+both the nagios user and the apache user to the group.
+# groupadd nagcmd
+# usermod -a -G nagcmd nagios
+# usermod -a -G nagcmd apache
+3. Download nagios from nagios.org site
+After download the nagios latest version extract the tar file through tar -zxvf filaname.tar.gz  command. 
+
+cd ../nagios-4.1.1
+./configure --with-command-group=nagcmd
+make all --> compile the Nagios source code
+
+Install binaries, init script, sample config files and set permissions on the external command directory
+# make install
+# make install-init
+# make install-config
+# make install-commandmode
+
+Note: DO NOT start Nagios yet
+ 
+Configure the web interface
+1. Install the Nagios web config file in the Apache conf.d directory.
+cd ../nagios-4.1.1
+make install-webconf
+
+htpasswd -c /usr/local/nagios/etc/htpasswd.users nagiosadmin  --> Create a nagiosadmin account for logging into the Nagios web interface
+Type the password: *
+
+service httpd restart --> Restart Apache to make the new settings take effect.
+
+Nagios Plugins Installation
+
+Download nagios plugins from nagios.org site
+After download the nagios latest version extract the tar file through tar -zxvf filaname.tar.gz  command.
+
+cd ../nagios-plugins-2.1.4
+./configure --with-nagios-user=nagios --with-nagios-group=nagios --> Compile and install the plugins
+make
+make install
+chkconfig --add nagios --> Add Nagios to the list of system services and have it automatically start when the system boots.
+chkconfig nagios on
+
+/usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg --> Verify the sample Nagios configuration files.
+
+ouput - Total Warnings: 0 & Total Errors: 0
+
+Installing Check_postgres.pl module :
+
+1.Download and extract the check_postgres.pl
+#wget http://bucardo.org/downloads/check_postgres.tar.gz
+2. Install the check_postgres.pl
+cd /root/check_postgres-2.20.1
+
+Please install DBD::Pg Module as shown below
+
+$cpan
+cpan>   install DBI
+cpan>   install DBD::Pg
+exit
+
+After installation, run the three commands from nagios User.
+
+You need to run the below three commands from the 'nagios' user. --> su nagios
+#perl Makefile.PL
+#make
+#make test
+
+Then switch to the root user and then run 'make install' 
+
+copy the check_postgres.pl executable file into nagios libexec directory.
+cp -r /usr/local/bin/check_postgres.pl /usr/local/nagios/libexec/
+cd /usr/local/nagios/libexec/
+vi check_postgres.pl
+edit the $PGBINDIR
+example : $PGBINDIR='/usr/pgsql-9.4/bin';
+Nagios and check_postgres.pl installation has been completed.
+
+Nagios Configuration with check_postgres.pl
+Location of localhost.cfg ---- /usr/local/nagios/etc/objects/localhost.cfg
+cd /usr/local/nagios/etc/objects
+cp -r localhost.cfg linuxserver.cfg --> Copy localhost.cfg  to linuxserver.cfg 
+
+/* Default */
+define host{
+        use                     linux-server            ; Name of host template to use
+                                                        ; This host definition will inherit all variables that are defined
+                                                        ; in (or inherited by) the linux-server host template definition.
+        host_name               localhost
+        alias                   localhost
+        address                 127.0.0.1
+        }
+
+/* Adding Line */
+define host{
+        use                     linux-server            ; Name of host template to use
+                                                        ; This host definition will inherit all variables that are defined
+                                                        ; in (or inherited by) the linux-server host template definition.
+        host_name               app2
+        alias                   remote
+        address                 192.168.1.19
+        }
+
+Add this linuxserver.cfg file under in nagios.cfg file for connection.
+cfg_file=/usr/local/nagios/etc/objects/linuxserver.cfg
+and comment the previous localhost.cfg file
+#cfg_file=/usr/local/nagios/etc/objects/localhost.cfg
+
+/usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg --> Verify the sample Nagios configuration files.
+
+Edit command.cfg and add command to configure alerts(Ex. Bloat)
+vi /usr/local/nagios/etc/objects/commands.cfg
+
+/* Adding Line */
+define command{
+        command_name    check_bloat
+        command_line    /usr/local/nagios/libexec/check_postgres.pl --host $192.168.1.19$ --dbuser=postgres --dbpass=cmgi -db postgres -p 5432 --action=bloat --warning='100 M' --crtical='200 M'
+        }
+
+save and exit then /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+
+Create server file for bloat 
+create a folder as name server_cfg under object directory
+vi /usr/local/nagios/etc/objects/server_cfg/postgres_remote.cfg
+
+define service {
+use                     generic-service
+host_name               app2
+service_description     Table Bloat
+is_volatile             0
+check_period            24x7
+max_check_attempts      15
+normal_check_interval   5
+retry_check_interval    1
+contact_groups          admins
+notification_interval   120
+notification_period     24x7
+notification_options
+notifications_enabled   1
+#servicegroups           dbservices
+check_command           check_nrpe!check_bloat
+}
+
+save and exit then /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+
+Add this postgres_remote.cfg file under in nagios.cfg file for connection.
+cfg_file=/usr/local/nagios/etc/objects/server_cfg/postgres_remote.cfg
+
+save and exit then /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+ouput - Total Warnings: 0 & Total Errors: 0
+
+service nagios restart ---> Restart the Nagios server
+
+
+Nagios with NRPE (e.g - 192.168.1.19 where postgresql database has already installed)
+------------------------------------------------------------------------------------------------------------------
+NRPE is nagios remote plugin executor which is used for remote communication between nagios monitoring server and remote DB server.
+This allows us to monitor remote machine metrics (disk usage, CPU load, etc.). 
+NRPE daemon runs on the DB server and check_nrpe plugin resides on the monitoring server(the server that contains Nagios). 
+You can go through the below documentation for a detailed information on this:
+https://assets.nagios.com/downloads/nagioscore/docs/nrpe/NRPE.pdf
+-------------------------------------------------------------------------------------------------------------------------------------------
+NRPE is nagios remote plugin executor which is used for remote communication between nagios monitoring
+server and remote machine.This allows us to monitor remote machine metrics (disk usage, CPU load, etc.)
+.............................
+whenever we are trying to start installation process (./configure) of nrpe if we found this error "checking for SSL headers... configure: error: Cannot find ssl headers"
+so then we must be install ssl packages. (yum install openssl-devel) then again run ./configure 
+
+1.Install nrpe on Remote Host
+wget http://sourceforge.net/projects/nagios/files/nrpe-2.x/nrpe-2.15/nrpe-2.15.tar.gz
+./configure
+make all
+make install-plugin
+make install-daemon
+make install-daemon-config
+make install-xinetd
+2.Copy check_postgres.pl to client location and create symlink to it for commands to be checked.
+
+scp /usr/local/nagios/libexec/check_postgres.pl root@192.168.1.19:/usr/local/libexec/
+
+perl /usr/local/libexec/check_postgres.pl --symlinks
+
+After installing NRPE on client,edit nrpe.cfg
+Make below changes:
+allowed_hosts=127.0.0.1, 192.168.1.15, 192.168.1.19
+
+For start NRPE (Start nrpe process on client as shown below and check whether port is listening or not)
+/* service xinetd start */
+
+/usr/local/nagios/bin/nrpe -c /etc/nrpe.cfg -d
+/usr/local/nagios/bin/nrpe -c /etc/nrpe.cfg -4 -d
+
+if user install nrpe through yum command then nrpe script file will be automatically generated in /etc/init.d/ directory.
+for refeerence to follow nrpe script file and start/stop/restart nrpe through service command.
+
+[root@app2 libexec]# ps aux|grep nrpe
+nagios   32007  0.0  0.0  39252  1336 ?        Ss   20:08   0:00 /usr/local/nagios/bin/nrpe -c /etc/nrpe.cfg -d
+root     32010  0.0  0.0 103316   840 pts/1    S+   20:08   0:00 grep nrpe
+[root@app2 libexec]# netstat -apn | grep -i nrpe
+tcp        0      0 0.0.0.0:5666                0.0.0.0:*                   LISTEN      32007/nrpe
+tcp        0      0 :::5666                     :::*                        LISTEN      32007/nrpe
+unix  2      [ ]         DGRAM                    1954612 32007/nrpe
+[root@app2 libexec]#
+
+On nagios Monitoring server,edit command.cfg located in
+/usr/local/nagios/etc/objects and add entry for check_nrpe
+In below command,check_nrpe will accept arguments specified in configuration file(It is described further.)
+
+
+define command{
+ command_name check_nrpe
+ command_line $USER1$/check_nrpe -H $HOSTADDRESS$ -c $ARG1$
+ }
+
+scp /usr/local/nagios/libexec/check_nrpe root@192.168.1.15:/usr/local/nagios/libexec/
+
+Restart the Nagios server and NRPE server 
+
+For check NRPE installed properly or not 
+
+Run this command in both nagios and nrpe server /usr/local/nagios/libexec/check_nrpe -H 192.168.1.19 or -H 127.0.0.1 or --host=app2
+output - NRPE v2.15
+
+
+for localhost services run in nrpe server so again nagios plugin will be installed in  nrpe machine. Process of installation same as above.
+
+tar -zxvf nagios-plugins-2.1.4.tar.gz
+cd /home/nagios/nagios-plugins-2.1.4
+
+Compile and install the plugins.
+./configure --with-nagios-user=nagios --with-nagios-group=nagios
+make
+make install
+
+after all nagios plugins command has stored in /usr/local/nagios/libexec/ directory.
+
+
+Suppose user need to add postgresql database size service then find below the steps
+1.  check_postgres_database_size command used for checking postgresql database size.
+this command is available under /usr/local/libexec directory 
+2. Run this line in Nrpe machine
+/usr/local/libexec/check_postgres_database_size --dbuser=postgres --dbpass=cmgi -db postgres -p 5432 -w 80MB -c 100MB
+if outpout comes with no error then below this line added in nrpe.cfg file
+vi /etc/nrpe.cfg
+command[check_postgres_database_size]=/usr/local/libexec/check_postgres_database_size --dbuser=postgres --dbpass=cmgi -db postgres -p 5432 -w 80MB -c 100MB
+-w for warning limit and -c for critical limit
+
+save and exit
+
+3. Go to nagios server and edit vi /usr/local/nagios/etc/objects/server_cfg/postgres_remote.cfg
+define service {
+use                     generic-service
+host_name               app2
+service_description     Table Bloat
+is_volatile             0
+check_period            24x7
+max_check_attempts      15
+normal_check_interval   5
+retry_check_interval    1
+contact_groups          admins
+notification_interval   120
+notification_period     24x7
+notification_options
+notifications_enabled   1
+#servicegroups           dbservices
+check_command           check_nrpe!check_postgres_database_size
+}
+
+save and exit then /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+
+4. Restart nagios server and nrpe and check it on nagios access browser.
+
+for output check in backend in both nagios server and nrpe machine with same command
+/usr/local/nagios/libexec/check_nrpe -H 192.168.1.19 -c check_postgres_database_size
+
+Test NRPE
+Now check that NRPE is listening and responding to requests.
+
+/usr/local/nagios/libexec/check_nrpe -H 127.0.0.1
+ You should see the output similar to the following:
+
+NRPE v4.0.3
+If you get the NRPE version number (as shown above), NRPE is installed and configured correctly.
+
+
+Following this way user can add multiple monitoring command.
+Reference Link
+http://nagios-plugins.org/doc/man/
+https://bucardo.org/check_postgres/check_postgres.pl.html
+
+
+------------------------------------------------------------------------------------------
+Add service group in nagios server with user and group nagios.
+vi /usr/local/nagios/etc/objects/server_cfg/service_group.cfg
+
+define servicegroup{
+        servicegroup_name       dbservices
+        alias                   Database Services
+        members                 app2,Table Bloat, app2,Database Size, app2,NRPE Check, app2,Postgres Database Status, 
+                                 app2,Postgres Table Size, app2,Postgres Index Size, app2,Current Load, app2,PING, 
+                                 app2,HTTP, app2,HDD Check, app2,Total Processes, app2,Swap Usages, app2,RAM Usages, 
+                                 app2,Postgres Query Time
+                   }
+Add this service_group.cfg file under in nagios.cfg file for connection.
+cfg_file=/usr/local/nagios/etc/objects/server_cfg/service_group.cfg   
+
+save and exit then /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+ouput - Total Warnings: 0 & Total Errors: 0
+
+service nagios restart ---> Restart the Nagios server
+
+for check access the nagios server on browser select service groups under this category dbservices group will be show.
+
+-----------------------------------------------------------------------------------------------------------
+
+
+Port allow in iptables
+Nagios access on apache which is 80 (default) 
+NRPE access on 5666 defult port
+vi /etc/syconfig/iptables
+-A INPUT -m state --state NEW -m tcp -p tcp --dport 80 -j ACCEPT
+-A INPUT -m state --state NEW -m tcp -p tcp --dport 5666 -j ACCEPT 
+
+save and exit then service iptables restart
+
+If user run the nagios server through any other port like 81 then changes it on configuration file
+vi /etc/httpd/conf/httpd.conf
+Listen 192.168.1.15:80  / Listen 192.168.1.15:81
+
+restart the apache --> service httpd restart
+Allow 81 port in iptables and restart the iptables.
+Access the nagios server with new port http://HOSTADDRESS:81/nagios/ with username and password.
+
+
+For REPORT Generation
+
+To know all type of report(.cgi) file and its characteristics reference the link 
+https://assets.nagios.com/downloads/nagioscore/docs/nagioscore/4/en/cgis.html
+
+Primarily we need to generate status.cgi file for monitoring on below command
+wget -v --user nagiosadmin --password '***' --no-check-certificate -O ./`date +%Y%m%d`-status.html     http://nagios-server-ip/nagios/cgi-bin/status.cgi 
+wget -v --user nagiosadmin --password cmgi --no-check-certificate -O /home/nagios/`date +%Y%m%d`-status.html     http://192.168.1.15/nagios/cgi-bin/status.cgi
+
+Here it will be generated currentdate_status.html file, this file can copy and transfer to 
+/var/www/html directory show the report on web browser.
+
+ERROR Solution
+------------------------------------
+1. If service information output comes an error like "CHECK_NRPE: Socket timeout after 10 seconds." so please check the command with this output 
+"already on other day i told you if you are getting ssl or soket timeout error you have to check -n "
+
+[root@app1 server_cfg]# /usr/local/nagios/libexec/check_nrpe -H 192.168.1.19 -c check_nrpe -n
+CHECK_NRPE: Error receiving data from daemon.
+[root@app1 server_cfg]#
+
+
+
+https://bucardo.org/check_postgres/check_postgres.pl.html
+http://nagios-plugins.org/doc/man/

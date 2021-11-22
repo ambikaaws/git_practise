@@ -1,0 +1,18 @@
+"binod.mandal1"	"mandal1962" mobile ='8249086994'
+"minati.mandal"	"mandal1966" mobile ='7873353782'
+"jagannath.baral1";"welcome$2013"
+pdei457 padmini@2020
+"chakradhar.nayak18";"welcome1"
+select userid,pwd from hrmis2.emp_mast where mobile='9437323199'
+"anita.nayak25"	Anita@1987
+9853648035
+pranati.prusty
+mwsmnqQ8
+"bhikari.swain3";"swain1978"
+
+"OLSPAD0010000" "9437069792"
+"v..pandian"	"pandian1974"
+
+select userid,pwd from hrmis2.emp_mast where mobile='9040421268'
+select username,password from hrmis2.user_details where userid=91165445
+ 91165445 Santosh@1990 9040421268
